@@ -1,0 +1,14 @@
+{
+  "name": "beep-link",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pair two phones with a code; tap Send sound and the other phone plays your sound and spins a 3D glass spiral.",
+  "main": "server.js",
+  "engines": { "node": ">=18" },
+  "scripts": { "start": "node server.js" },
+  "dependencies": {
+    "express": "^4.21.2",
+    "three": "0.147.0",
+    "ws": "^8.18.0"
+  }
+}
