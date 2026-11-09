@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#03060d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Beep Link</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22%2303060d%22/%3E%3Cpath d=%22M4 16c3 0 3-7 6-7s3 14 6 14 3-14 6-14 3 7 6 7%22 stroke=%22%234f9dff%22 stroke-width=%223%22 fill=%22none%22 stroke-linecap=%22round%22/%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@300;500&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: one screen. Group strip on top, sound waves across the middle, recent messages, hold-to-talk at the bottom. Deliberately dark-only. */
+:root{
+  color-scheme:dark;
+  --bg:#03060d; --glass:rgba(120,170,255,.10); --glass-line:rgba(170,205,255,.24); --fg:#eaf2ff; --muted:#8ea6c8;
+  --accent:#4f9dff; --ok:#49e39b; --rec:#ff5c6c;
+  --display:"Sora",system-ui,-apple-system,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;overflow:hidden}
+body{background:var(--bg);color:var(--fg);font-family:var(--display);-webkit-tap-highlight-color:transparent}
+#waves{position:fixed;inset:0;width:100%;height:100%;display:block}
+
+.app{position:fixed;inset:0;display:flex;flex-direction:column;
+  padding-top:calc(env(safe-area-inset-top,0px) + 14px);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 24px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));pointer-events:none}
+.app > *{pointer-events:auto}
+
+/* top strip: who's in the group + the code */
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.people{display:flex;align-items:center;min-width:0}
+.av{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex:none;font-weight:500;font-size:.9rem;color:#03060d;
+  background:var(--c);border:2px solid var(--bg);margin-left:-8px;transition:transform .2s,box-shadow .2s}
+.av:first-child{margin-left:0}
+.av.me{box-shadow:0 0 0 2px var(--bg),0 0 0 3px rgba(234,242,255,.6)}
+.av.speaking{transform:scale(1.15);box-shadow:0 0 0 2px var(--bg),0 0 16px 2px var(--c)}
+.av.more{background:rgba(255,255,255,.12);color:var(--fg);font-family:var(--mono);font-size:.72rem}
+.count{margin-left:10px;color:var(--muted);font-size:.8rem;white-space:nowrap}
+.chip{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:99px;background:var(--glass);border:1px solid var(--glass-line);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);font:inherit;font-size:.8rem;color:var(--fg);cursor:pointer;flex:none}
+.chip i{width:8px;height:8px;border-radius:50%;background:#55627a}
+.chip.on i{background:var(--ok);box-shadow:0 0 10px var(--ok)}
+.chip b{font-family:var(--mono);font-weight:500;letter-spacing:.18em}
+
+.now{position:fixed;left:16px;right:16px;top:20%;text-align:center;min-height:1.4em;font-size:1.05rem;color:var(--muted);pointer-events:none}
+.feed{margin-top:auto!important}
+.now b{color:var(--fg);font-weight:500}
+
+/* recent messages */
+.feed{list-style:none;margin:0 0 14px;padding:0;display:flex;flex-direction:column;gap:6px;max-height:34vh;overflow-y:auto;width:min(100%,420px);align-self:center}
+.feed li button{width:100%;display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:14px;border:1px solid transparent;
+  background:rgba(255,255,255,.04);color:var(--fg);font:inherit;font-size:.92rem;cursor:pointer;text-align:left}
+.feed li button:hover{background:rgba(255,255,255,.07)}
+.feed .dot{width:10px;height:10px;border-radius:50%;background:var(--c);flex:none;box-shadow:0 0 8px var(--c)}
+.feed .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.feed .tm,.feed .du{font-family:var(--mono);font-size:.74rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.feed li.new button{border-color:var(--glass-line)}
+.feed li.playing button{border-color:var(--c);background:rgba(255,255,255,.08)}
+.feed li.wait button{border-color:var(--accent);box-shadow:0 0 20px -6px var(--accent)}
+
+/* hold to talk */
+.talk{align-self:center;width:min(100%,360px);padding:18px 24px;border-radius:999px;border:1px solid rgba(190,220,255,.45);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:10px;font-family:var(--display);font-weight:500;font-size:1.08rem;letter-spacing:.05em;color:#fff;
+  background:linear-gradient(180deg,rgba(140,190,255,.28),rgba(40,90,200,.16));backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 10px 40px -10px rgba(79,157,255,.5);
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none;transition:transform .1s,opacity .2s;font-variant-numeric:tabular-nums}
+.talk:disabled{opacity:.35;cursor:not-allowed}
+.talk .rd{width:10px;height:10px;border-radius:50%;background:var(--rec);flex:none}
+.talk.rec{transform:scale(1.03);border-color:rgba(255,140,150,.7);background:linear-gradient(180deg,rgba(255,110,130,.34),rgba(160,30,60,.22))}
+.talk.rec .rd{animation:pulse 1s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,92,108,.7)}100%{box-shadow:0 0 0 12px rgba(255,92,108,0)}}
+
+.toast{position:fixed;z-index:5;left:50%;top:calc(env(safe-area-inset-top,0px) + 64px);transform:translate(-50%,-8px);opacity:0;transition:opacity .25s,transform .25s;
+  padding:9px 16px;border-radius:99px;background:var(--glass);border:1px solid var(--glass-line);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  font-size:.9rem;white-space:nowrap;max-width:calc(100% - 32px);overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* settings sheet */
+.sheet{position:fixed;z-index:6;inset:auto 0 0 0;max-height:90%;overflow:auto;background:linear-gradient(180deg,rgba(14,22,40,.94),rgba(5,9,18,.98));
+  border-top:1px solid var(--glass-line);border-radius:26px 26px 0 0;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  padding-top:22px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 22px);
+  padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px))}
+.sheet-in{max-width:420px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+.sheet input{font:inherit;width:100%;padding:13px 14px;border-radius:14px;border:1px solid var(--glass-line);background:rgba(0,0,0,.35);color:var(--fg);font-size:16px}
+.sheet input.code{font-family:var(--mono);font-size:1.4rem;letter-spacing:.35em;text-transform:uppercase;text-align:center}
+.btn{font:inherit;font-weight:500;cursor:pointer;border-radius:14px;border:1px solid var(--glass-line);padding:13px 16px;background:rgba(255,255,255,.06);color:var(--fg)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#00122e}
+.row{display:grid;grid-template-columns:1fr auto;gap:10px}
+.err{color:#ff8a8a;font-size:.9rem;margin:0}
+.code-big{font-family:var(--mono);font-size:2rem;letter-spacing:.32em;text-align:center;padding-left:.32em}
+.roster{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;max-height:30vh;overflow:auto}
+.roster li{display:flex;align-items:center;gap:10px;font-size:.95rem}
+.roster .av{margin:0;width:28px;height:28px;font-size:.8rem}
+.roster small{color:var(--muted)}
+button:focus-visible,input:focus-visible{outline:2px solid #9cc8ff;outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.talk.rec .rd{animation:none}}
+</style>
+</head>
+<body>
+<canvas id="waves" aria-hidden="true"></canvas>
+
+<div class="app">
+  <div class="top">
+    <div class="people" id="people"></div>
+    <button class="chip" id="chip"><i></i><span id="chipText">Join</span></button>
+  </div>
+  <div class="now" id="now"></div>
+  <ul class="feed" id="feed" aria-label="Recent messages"></ul>
+  <button class="talk" id="talkBtn" disabled><span class="rd" aria-hidden="true"></span><span id="talkLbl">Hold to talk</span></button>
+</div>
+<div class="toast" id="toast"></div>
+
+<div class="sheet" id="sheet">
+  <div class="sheet-in">
+    <div id="setupPart" style="display:contents">
+      <input id="nameIn" maxlength="16" placeholder="Name" autocomplete="nickname" aria-label="Your name">
+      <button class="btn primary" id="newBtn">New group</button>
+      <div class="row">
+        <input id="codeIn" class="code" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CODE" aria-label="Group code">
+        <button class="btn" id="joinBtn">Join</button>
+      </div>
+      <p class="err" id="err" hidden></p>
+    </div>
+    <div id="groupPart" hidden style="display:contents">
+      <div class="code-big" id="codeLbl"></div>
+      <button class="btn" id="copyBtn">Copy invite link</button>
+      <ul class="roster" id="roster"></ul>
+      <div class="row">
+        <button class="btn primary" id="closeBtn">Done</button>
+        <button class="btn" id="leaveBtn">Leave</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const COLORS=["#4f9dff","#ff8ab3","#5ee3c1","#ffc65c","#b18cff","#7fd3ff","#ff9a6b","#a6e36b"];
+const ALPH="abcdefghjkmnpqrstuvwxyz23456789", MAX_SEC=30, RATE=16000;
+let me={name:""}; try{ const s=JSON.parse(localStorage.getItem("beepme")||"null"); if(s&&s.name) me.name=s.name; }catch(e){}
+const savePrefs=()=>{ try{ localStorage.setItem("beepme",JSON.stringify(me)); }catch(e){} };
+const fmt=s=>{ s=Math.max(0,Math.round(s)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); };
+const colorOf=i=>COLORS[(+i||0)%COLORS.length];
+
+/* ================= sound waves ================= */
+// Flat and still at rest. They move only while a message is being recorded, sent or played.
+const W={level:0,target:0,color:[79,157,255],want:[79,157,255],burst:0};
+(function(){
+  const cv=$("waves"), g=cv.getContext("2d"); let w=0,h=0,dpr=1;
+  function size(){ dpr=Math.min(devicePixelRatio||1,2); w=innerWidth; h=innerHeight; cv.width=w*dpr; cv.height=h*dpr; g.setTransform(dpr,0,0,dpr,0,0); }
+  addEventListener("resize",size); size();
+  const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const lines=[ // frequency, speed, phase, weight, alpha, width
+    [1.6, 1.3, 0.0, 1.00, .95, 2.4],
+    [2.3,-1.7, 1.3, 0.72, .55, 1.6],
+    [3.1, 2.1, 2.1, 0.50, .38, 1.2],
+    [1.1,-0.9, 3.7, 0.85, .28, 1.0],
+    [4.2, 2.8, 0.7, 0.34, .22, 1.0]];
+  let t=0, last=performance.now();
+  (function frame(now){
+    const dt=Math.min(.05,(now-last)/1000); last=now;
+    W.level+=(W.target-W.level)*Math.min(1,dt*(W.target>W.level?14:3));
+    W.target*=Math.pow(.02,dt);                          // falls back to flat on its own
+    W.burst*=Math.pow(.15,dt);
+    for(let i=0;i<3;i++) W.color[i]+=(W.want[i]-W.color[i])*Math.min(1,dt*4);
+    const energy=Math.min(1,W.level+W.burst);
+    t+=dt*(reduce?.3:1)*(0.4+energy*3.2);
+    g.clearRect(0,0,w,h);
+    const cy=h*.47, amp=Math.min(h*.2,170), [r,gg,b]=W.color.map(Math.round);
+    // soft glow behind the line
+    const glow=g.createRadialGradient(w/2,cy,0,w/2,cy,Math.max(w,h)*.6);
+    glow.addColorStop(0,`rgba(${r},${gg},${b},${.10+energy*.22})`); glow.addColorStop(1,"rgba(0,0,0,0)");
+    g.fillStyle=glow; g.fillRect(0,0,w,h);
+    g.globalCompositeOperation="lighter";
+    const N=Math.max(80,Math.floor(w/4));
+    lines.forEach(([f,sp,ph,wt,al,lw],k)=>{
+      g.beginPath();
+      for(let i=0;i<=N;i++){
+        const x=i/N, env=Math.pow(Math.sin(Math.PI*x),2);             // tapered at both edges
+        const y=Math.sin(x*Math.PI*2*f + t*sp + ph)*.7 + Math.sin(x*Math.PI*2*f*2.3 - t*sp*1.4 + ph*2)*.3;
+        const a=(0.006+energy*wt)*amp*env;
+        i?g.lineTo(x*w,cy+y*a):g.moveTo(x*w,cy+y*a);
+      }
+      g.strokeStyle=`rgba(${r},${gg},${b},${al*(.55+energy*.45)})`;
+      g.lineWidth=lw; g.shadowColor=`rgba(${r},${gg},${b},.9)`; g.shadowBlur=k===0?18:8;
+      g.stroke();
+    });
+    g.shadowBlur=0; g.globalCompositeOperation="source-over";
+    requestAnimationFrame(frame);
+  })(last);
+})();
+function hexRgb(h){ const n=parseInt(h.slice(1),16); return [n>>16&255,n>>8&255,n&255]; }
+function wave(level,color){ W.target=Math.max(W.target,Math.min(1,level)); if(color) W.want=hexRgb(color); }
+function burst(color){ W.burst=1; if(color) W.want=hexRgb(color); }
+
+/* ================= audio ================= */
+let actx=null;
+function unlockAudio(){ try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==="suspended") actx.resume();
+  const o=actx.createOscillator(),gn=actx.createGain(); gn.gain.value=0; o.connect(gn).connect(actx.destination); o.start(); o.stop(actx.currentTime+.01);}catch(e){} }
+function session(t){ try{ if(navigator.audioSession) navigator.audioSession.type=t; }catch(e){} }   // iPhone: play with silent switch on
+session("playback");
+
+let toastT;
+function toast(text){ const t=$("toast"); t.textContent=text; t.classList.add("show"); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("show"),2200); }
+
+/* ---- record: mic → 16 kHz mono WAV, which every phone can play ---- */
+let rec=null, holding=false, pressId=0;
+function setTalk(state,t){ $("talkBtn").classList.toggle("rec",state==="rec"); $("talkLbl").textContent= state==="rec"?fmt(t||0):state==="wait"?"…":"Hold to talk"; }
+function micErr(e){
+  if(!navigator.mediaDevices) return "Open the https link to use the microphone.";
+  if(e&&e.name==="NotAllowedError") return "Allow the microphone for this site in settings.";
+  if(e&&e.name==="NotFoundError") return "No microphone found.";
+  return "Microphone unavailable.";
+}
+async function startRec(){
+  unlockAudio(); if(rec||$("talkBtn").disabled) return;
+  if(playing){ try{ playing.src.stop(); }catch(e){} }
+  const id=++pressId; holding=true; setTalk("wait");
+  let stream;
+  try{ session("play-and-record"); stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1}}); }
+  catch(e){ session("playback"); setTalk("idle"); toast(micErr(e)); return; }
+  if(id!==pressId||!holding){ stream.getTracks().forEach(t=>t.stop()); session("playback"); setTalk("idle"); playNext(); return; }
+  try{ if(actx.state!=="running") await actx.resume(); }catch(e){}
+  const src=actx.createMediaStreamSource(stream), proc=actx.createScriptProcessor(4096,1,1), mute=actx.createGain(); mute.gain.value=0;
+  const chunks=[], myColor=colorOf(myColorIdx());
+  proc.onaudioprocess=e=>{ const d=e.inputBuffer.getChannelData(0); chunks.push(new Float32Array(d));
+    let s=0; for(let i=0;i<d.length;i+=8) s+=d[i]*d[i]; wave(Math.sqrt(s/(d.length/8))*6,myColor); };
+  src.connect(proc); proc.connect(mute); mute.connect(actx.destination);
+  rec={stream,src,proc,mute,chunks,start:performance.now(),rate:actx.sampleRate};
+  setTalk("rec",0); setTalking(myId,true); wsSend({type:"rec",on:true});
+  rec.timer=setInterval(()=>{ if(!rec) return; const t=(performance.now()-rec.start)/1000; setTalk("rec",t); if(t>=MAX_SEC) stopRec(true); },250);
+}
+function stopRec(send){
+  holding=false;
+  if(!rec){ if($("talkLbl").textContent==="…") setTalk("idle"); return; }
+  const r=rec; rec=null; clearInterval(r.timer);
+  try{ r.src.disconnect(); r.proc.disconnect(); r.mute.disconnect(); }catch(e){}
+  r.stream.getTracks().forEach(t=>t.stop()); session("playback"); setTalk("idle"); setTalking(myId,false); wsSend({type:"rec",on:false});
+  const dur=(performance.now()-r.start)/1000;
+  if(send){
+    if(dur<.6) toast("Hold to record");
+    else{
+      const wav=encodeWav(r.chunks,r.rate);
+      if(wsSend({type:"voice",audio:toB64(wav),dur:Math.round(dur*10)/10})){
+        burst(colorOf(myColorIdx()));
+        addMsg({mine:true,name:"You",color:myColorIdx(),dur,at:Date.now(),ab:wav.buffer,heard:true});
+      } else toast("Not sent. Reconnecting…");
+    }
+  }
+  setTimeout(playNext,300);
+}
+function encodeWav(chunks,inRate){
+  let n=0; chunks.forEach(c=>n+=c.length);
+  const all=new Float32Array(n); let o=0; chunks.forEach(c=>{ all.set(c,o); o+=c.length; });
+  const ratio=inRate/RATE, outLen=Math.floor(n/ratio), pcm=new Int16Array(outLen);
+  let peak=0; for(let i=0;i<n;i++) peak=Math.max(peak,Math.abs(all[i]));
+  const gain=peak>0&&peak<.5?Math.min(4,.7/peak):1;               // lift quiet recordings
+  for(let i=0;i<outLen;i++){ const a=Math.floor(i*ratio), b=Math.min(n,Math.floor((i+1)*ratio)); let s=0; for(let j=a;j<b;j++) s+=all[j];
+    const v=Math.max(-1,Math.min(1,(s/Math.max(1,b-a))*gain)); pcm[i]=v<0?v*0x8000:v*0x7fff; }
+  const buf=new ArrayBuffer(44+pcm.length*2), dv=new DataView(buf), w=(p,s)=>{ for(let i=0;i<s.length;i++) dv.setUint8(p+i,s.charCodeAt(i)); };
+  w(0,"RIFF"); dv.setUint32(4,36+pcm.length*2,true); w(8,"WAVE"); w(12,"fmt "); dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,1,true);
+  dv.setUint32(24,RATE,true); dv.setUint32(28,RATE*2,true); dv.setUint16(32,2,true); dv.setUint16(34,16,true); w(36,"data"); dv.setUint32(40,pcm.length*2,true);
+  new Int16Array(buf,44).set(pcm); return new Uint8Array(buf);
+}
+function toB64(u8){ let s=""; for(let i=0;i<u8.length;i+=0x8000) s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000)); return btoa(s); }
+function fromB64(b){ const s=atob(b), u=new Uint8Array(s.length); for(let i=0;i<s.length;i++) u[i]=s.charCodeAt(i); return u.buffer; }
+function decode(ab){ return new Promise((res,rej)=>{ const p=actx.decodeAudioData(ab,res,rej); if(p&&p.then) p.then(res,rej); }); }
+
+/* ---- messages: newest first, new ones play in order ---- */
+let msgs=[], playing=null, msgN=0;
+function addMsg(m){ m.id=++msgN; msgs.unshift(m); msgs=msgs.slice(0,20); renderFeed(); }
+function renderFeed(){
+  const ul=$("feed"); ul.innerHTML="";
+  msgs.slice(0,6).forEach(m=>{
+    const li=document.createElement("li"); li.style.setProperty("--c",colorOf(m.color));
+    if(!m.heard) li.classList.add("new"); if(playing&&playing.m===m) li.classList.add("playing"); if(m.wait) li.classList.add("wait");
+    const b=document.createElement("button"); b.innerHTML='<span class="dot"></span><span class="nm"></span><span class="du"></span><span class="tm"></span>';
+    b.querySelector(".nm").textContent=m.name; b.querySelector(".du").textContent=fmt(m.dur);
+    b.querySelector(".tm").textContent=new Date(m.at).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
+    b.setAttribute("aria-label",`${m.mine?"Your message":"Message from "+m.name}, ${fmt(m.dur)}. Play`);
+    b.onclick=()=>{ unlockAudio(); play(m); };
+    li.appendChild(b); ul.appendChild(li);
+  });
+}
+function playNext(){
+  if(playing||rec) return;
+  const next=[...msgs].reverse().find(m=>!m.heard);
+  if(next) play(next);
+}
+async function play(m){
+  if(rec) return;
+  unlockAudio(); if(!actx) return;
+  try{ if(actx.state!=="running") await actx.resume(); }catch(e){}
+  if(actx.state!=="running"){ m.wait=true; renderFeed(); $("now").innerHTML="Tap a message to play"; return; }
+  if(playing){ try{ playing.src.stop(); }catch(e){} playing=null; }
+  msgs.forEach(x=>x.wait=false);
+  let buf; try{ buf=await decode(m.ab.slice(0)); }catch(e){ m.heard=true; toast("Couldn't play that message."); renderFeed(); playNext(); return; }
+  const src=actx.createBufferSource(), an=actx.createAnalyser(); an.fftSize=512; src.buffer=buf;
+  src.connect(an); an.connect(actx.destination);
+  const p={src,m}; playing=p; m.heard=true; renderFeed();
+  const color=colorOf(m.color); const nameEl=document.createElement("b"); nameEl.textContent=m.name;
+  $("now").innerHTML=""; $("now").append(nameEl);
+  if(!m.mine) setTalking(m.from,true);
+  const data=new Float32Array(an.fftSize);
+  (function tick(){ if(playing!==p) return; an.getFloatTimeDomainData(data); let s=0; for(let i=0;i<data.length;i++) s+=data[i]*data[i];
+    wave(Math.sqrt(s/data.length)*6,color); requestAnimationFrame(tick); })();
+  src.onended=()=>{ if(playing===p){ playing=null; $("now").textContent=""; setTalking(m.from,false); renderFeed(); setTimeout(playNext,350); } };
+  src.start();
+}
+function incoming(v){
+  if(typeof v.audio!=="string") return;
+  let ab; try{ ab=fromB64(v.audio); }catch(e){ return; }
+  addMsg({from:v.from,name:String(v.name||"Someone").slice(0,16),color:v.color,dur:+v.dur||0,at:v.at||Date.now(),ab,heard:false});
+  try{ navigator.vibrate&&navigator.vibrate([90,50,90]); }catch(e){}
+  playNext();
+}
+
+/* ================= group connection ================= */
+let ws=null, wsOpen=false, retry=0, wantCode=null, myCode=null, myId=null, members=[];
+function wsSend(m){ if(ws&&ws.readyState===1){ ws.send(JSON.stringify(m)); return true; } return false; }
+function connect(){
+  ws=new WebSocket((location.protocol==="https:"?"wss:":"ws:")+"//"+location.host+"/ws");
+  ws.onopen=()=>{ wsOpen=true; retry=0; if(wantCode) wsSend({type:"join",code:wantCode,name:me.name}); refresh(); };
+  ws.onclose=()=>{ wsOpen=false; members=[]; myCode=null; refresh(); setTimeout(connect,Math.min(8000,500*2**retry++)); };
+  ws.onerror=()=>{};
+  ws.onmessage=e=>{ let m; try{ m=JSON.parse(e.data); }catch(_){ return; }
+    if(m.type==="joined"){ myCode=m.code; myId=m.you; refresh(); }
+    if(m.type==="members"){ myId=m.you; members=Array.isArray(m.members)?m.members:[]; refresh(); }
+    if(m.type==="voice") incoming(m);
+    if(m.type==="rec") setTalking(m.from,!!m.on);
+    if(m.type==="sent"){ const ppl=m.to?`${m.to} ${m.to===1?"person":"people"}`:"", scr=m.screens?"the big screen":"";
+      toast(ppl||scr?`Sent to ${[ppl,scr].filter(Boolean).join(" and ")}`:"No one else is here"); }
+    if(m.type==="error"){ err(m.message); openSheet(false); wantCode=null; myCode=null; refresh(); }
+  };
+}
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden&&(!ws||ws.readyState>1)) connect(); });
+
+const others=()=>members.filter(x=>x.id!==myId);
+function myColorIdx(){ const m=members.find(x=>x.id===myId); return m?m.color:0; }
+const talking=new Set();
+function setTalking(id,on){ if(id==null) return; on?talking.add(String(id)):talking.delete(String(id)); renderPeople(); }
+function renderPeople(){
+  const box=$("people"); box.innerHTML="";
+  if(!myCode){ return; }
+  const all=[...members].sort((a,b)=>(a.id===myId)-(b.id===myId));   // you last
+  const list=all.filter(p=>p.kind!=="screen"), screens=all.length-list.length;
+  const shown=list.slice(0,6);
+  shown.forEach(p=>{ const d=document.createElement("span"); d.className="av"+(p.id===myId?" me":"")+(talking.has(String(p.id))?" speaking":"");
+    d.style.setProperty("--c",colorOf(p.color)); d.textContent=(p.name||"?").trim().charAt(0).toUpperCase()||"?"; d.title=p.id===myId?"You":p.name; box.appendChild(d); });
+  if(list.length>6){ const d=document.createElement("span"); d.className="av more"; d.textContent="+"+(list.length-6); box.appendChild(d); }
+  const c=document.createElement("span"); c.className="count"; c.textContent=`${list.length} here`+(screens?" · screen":""); box.appendChild(c);
+  const r=$("roster"); r.innerHTML="";
+  all.forEach(p=>{ const li=document.createElement("li"); const d=document.createElement("span"); d.className="av"; d.style.setProperty("--c",colorOf(p.color));
+    d.textContent=p.kind==="screen"?"▭":(p.name||"?").charAt(0).toUpperCase(); if(p.kind==="screen") d.style.setProperty("--c","#7fe3ff"); const n=document.createElement("span"); n.textContent=p.name;
+    li.append(d,n); if(p.id===myId){ const s=document.createElement("small"); s.textContent="you"; li.append(s); } r.appendChild(li); });
+}
+function refresh(){
+  const live=wsOpen&&!!myCode;
+  $("chip").classList.toggle("on",live);
+  $("chipText").innerHTML="";
+  if(!wantCode) $("chipText").textContent="Join";
+  else if(!wsOpen) $("chipText").textContent="Connecting…";
+  else { const b=document.createElement("b"); b.textContent=wantCode.toUpperCase(); $("chipText").append(b); }
+  $("talkBtn").disabled=!(live&&others().length>0);
+  renderPeople();
+  if(!$("now").textContent && live && !others().length) $("now").textContent="Share the code to bring people in";
+  else if($("now").textContent==="Share the code to bring people in" && others().length) $("now").textContent="";
+}
+
+function err(m){ $("err").textContent=m; $("err").hidden=false; }
+function openSheet(inGroup){ $("setupPart").hidden=inGroup; $("groupPart").hidden=!inGroup; $("sheet").hidden=false; }
+function join(code){
+  code=(code||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+  if(!me.name){ err("Add your name."); $("nameIn").focus(); return; }
+  if(code.length!==4){ err("Codes are 4 characters."); return; }
+  unlockAudio(); $("err").hidden=true; wantCode=code;
+  wsSend({type:"join",code,name:me.name});
+  $("codeLbl").textContent=code.toUpperCase(); $("sheet").hidden=true;
+  try{ localStorage.setItem("beepcode",code); history.replaceState(null,"","#"+code); }catch(e){}
+  refresh(); burst("#4f9dff");
+}
+function leaveGroup(){
+  wsSend({type:"leave"}); wantCode=null; myCode=null; members=[]; msgs=[]; renderFeed(); $("now").textContent="";
+  try{ localStorage.removeItem("beepcode"); history.replaceState(null,"",location.pathname); }catch(e){}
+  refresh(); openSheet(false);
+}
+
+$("nameIn").value=me.name;
+$("nameIn").addEventListener("input",()=>{ me.name=$("nameIn").value.trim().slice(0,16); savePrefs(); });
+$("newBtn").onclick=()=>{ let c=""; crypto.getRandomValues(new Uint8Array(4)).forEach(b=>c+=ALPH[b%ALPH.length]); join(c); };
+$("joinBtn").onclick=()=>join($("codeIn").value);
+$("codeIn").addEventListener("keydown",e=>{ if(e.key==="Enter") join($("codeIn").value); });
+$("leaveBtn").onclick=leaveGroup;
+$("closeBtn").onclick=()=>{ $("sheet").hidden=true; };
+$("chip").onclick=()=>openSheet(!!wantCode);
+$("copyBtn").onclick=async()=>{ const link=location.origin+location.pathname+"#"+(wantCode||"");
+  try{ await navigator.clipboard.writeText(link); toast("Invite link copied"); }catch(e){ toast(link); } };
+
+const tb=$("talkBtn");
+tb.addEventListener("pointerdown",e=>{ if(tb.disabled) return; e.preventDefault(); try{ tb.setPointerCapture(e.pointerId); }catch(_){} startRec(); });
+tb.addEventListener("pointerup",()=>stopRec(true));
+tb.addEventListener("pointercancel",()=>stopRec(false));
+tb.addEventListener("contextmenu",e=>e.preventDefault());
+tb.addEventListener("keydown",e=>{ if((e.key===" "||e.key==="Enter")&&!e.repeat){ e.preventDefault(); startRec(); } });
+tb.addEventListener("keyup",e=>{ if(e.key===" "||e.key==="Enter"){ e.preventDefault(); stopRec(true); } });
+
+(function(){ let c=(location.hash||"").slice(1); if(!c){ try{ c=localStorage.getItem("beepcode")||""; }catch(e){} }
+  if(/^[a-z0-9]{4}$/i.test(c)) $("codeIn").value=c.toUpperCase(); })();
+openSheet(false); refresh(); connect();
+</script>
+</body>
+</html>
